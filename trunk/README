@@ -1,0 +1,20 @@
+mysql auth_ldap is an authentication plugin for the mysql5 server. It
+allows you to create SQL users that are going to be authenticated using
+a LDAP server. This allows to minimize administrative duties, since your
+users will be able to reuse their existing account to access the
+database. The plugin requires MySQL 5.1 and up. It is compiled as an add
+on and does not require you to alter MySQL source code, or recompile the
+entire server. The plugin add support for LDAP using the openLDAP
+library.
+
+If you wish to submit a bug report, please do so at:
+http://sourceforge.net/p/mysqlauthldap/tickets/
+
+For more news, and documentation please visit http://sourceforge.net/projects/mysqlauthldap/
+
+Please read file `COPYRIGHT' for copyright notice.
+
+Please read file `INSTALL' for installation instructions.
+
+Please read file `AUTHORS' for a list o EngLab programmers and code 
+contributors

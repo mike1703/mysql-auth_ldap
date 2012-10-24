@@ -1,0 +1,5 @@
+mysql-auth_ldap is MySQL5 authentication plugin, allowing users to
+authenticate them selfs through an LDAP server.
+mysql-auth_ldap was writed by Charalampos Serenis  <serenis@dev.infoscope.gr>
+
+For copyright please check file COPYRIGHT.
