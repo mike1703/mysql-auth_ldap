@@ -12,7 +12,7 @@ all: api-test
 	$(MAKE) $(TARGET)
 
 $(TARGET): auth_ldap.o
-	gcc -shared -o $@ $<
+	gcc -shared -lconfig -o $@ $<
 
 auth_ldap.o: auth_ldap.c
 	gcc $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c $< -o $@

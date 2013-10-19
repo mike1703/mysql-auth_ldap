@@ -36,10 +36,15 @@
 
 // Third party includes
 #include <ldap.h>
+#include <libconfig.h>
 
-#define LDAP_URI               "ldap://localhost:389"
-#define DN                     "ou=People,dc=infoscope,dc=gr"
-#define LIBLDAP                "/usr/lib64/libldap.so"
+config_t cfg, *cf;
+char *CONFIG_LDAP_URI = NULL;
+char *CONFIG_DN = NULL;
+const char *CONFIG_LIBLDAP = NULL;
+
+// uncomment this for more info logs
+//#define DEBUG
 
 // Logging functions.
 static void openSysLog(void);
@@ -272,8 +277,9 @@ static int ldap_auth_server(MYSQL_PLUGIN_VIO *vio, MYSQL_SERVER_AUTH_INFO *myInf
   unsigned char *password;
   int pkt_len;
 
+#ifdef DEBUG
   info("ldap_auth_server: server plugin invoked");
-
+#endif
   /* read the password */
   if ((pkt_len= vio->read_packet(vio, &password)) < 0)
     return CR_ERROR;
@@ -286,16 +292,20 @@ static int ldap_auth_server(MYSQL_PLUGIN_VIO *vio, MYSQL_SERVER_AUTH_INFO *myInf
 
   LDAP *ld;
 
+#ifdef DEBUG
   info("ldap_auth_server: connecting to LDAP server" );
-  int status = (*ldap_initialize_wrapper)( &ld, LDAP_URI );
+#endif
+  int status = (*ldap_initialize_wrapper)( &ld, CONFIG_LDAP_URI );
   if( status != LDAP_SUCCESS ){
-    error("ldap_auth_server: connection to %s failed", LDAP_URI );
+    error("ldap_auth_server: connection to %s failed", CONFIG_LDAP_URI );
     return CR_ERROR;
   }
 
   int version = LDAP_VERSION3;
   
+#ifdef DEBUG
   info("ldap_auth_server: setting LDAP protocol version to 3" );
+#endif
   status = (*ldap_set_option_wrapper)( ld, LDAP_OPT_PROTOCOL_VERSION, &version );
   if( status != LDAP_OPT_SUCCESS ){
     error("ldap_auth_server: cannot set LDAP protocol version to 3" );
@@ -307,12 +317,12 @@ static int ldap_auth_server(MYSQL_PLUGIN_VIO *vio, MYSQL_SERVER_AUTH_INFO *myInf
   size_t usernameSize = strlen(username);
   // uid=?,DN
   //  4   1
-  size_t dnSize = usernameSize + strlen(DN) + 5;
+  size_t dnSize = usernameSize + strlen(CONFIG_DN) + 4;
   char *dn = (char*) malloc( sizeof(char) * (dnSize+1) );
-  strcpy( dn, "uid=" );
-  strcpy( &dn[4], username );
-  dn[4+usernameSize] = ',';
-  strcpy( &dn[5+usernameSize], DN );
+  strcpy( dn, "cn=" );
+  strcpy( &dn[3], username );
+  dn[3+usernameSize] = ',';
+  strcpy( &dn[4+usernameSize], CONFIG_DN );
   free(username);
   //info("ldap_auth_server: supplied password: '%s'", password);
   struct berval* credentials = (*ber_str2bv_wrapper)( (char*)password, 0, 0, NULL );
@@ -325,19 +335,25 @@ static int ldap_auth_server(MYSQL_PLUGIN_VIO *vio, MYSQL_SERVER_AUTH_INFO *myInf
   // do we need to free the server credentials?
   struct berval* serverCredentials;
 
+#ifdef DEBUG
   info("ldap_auth_server: dn: '%s'", dn);
   info("ldap_auth_server: binding to LDAP server");
+#endif
   status = (*ldap_sasl_bind_s_wrapper)( ld, dn, LDAP_SASL_SIMPLE, credentials, NULL, NULL, &serverCredentials);
-  info("ldap_auth_server: ldap_sasl_bind_s returned: %s", (*ldap_err2string_p)(status) );
+  //info("ldap_auth_server: ldap_sasl_bind_s returned: %s", (*ldap_err2string_p)(status) );
   //~ ber_bvfree(serverCredentials);
   free(dn);
   (*ldap_unbind_ext_wrapper)( ld, NULL, NULL );
 
   if( status == LDAP_SUCCESS ){
+#ifdef DEBUG
     info("ldap_auth_server: bind succeeded");
+#endif
     return CR_OK;
   }
+#ifdef DEBUG
   info("ldap_auth_server: bind failed");
+#endif
   //info("ldap_auth_server: ldap_sasl_bind_s returned: %s", (*ldap_err2string_p)(status) );
   return CR_ERROR;
 
@@ -354,10 +370,50 @@ static struct st_mysql_auth ldap_auth_handler=
 
 static int init(void* omited){
   info("init: loading module auth_ldap");
+  // read config file
+  const char *_CONFIG_LDAP_URI = NULL;
+  const char *_CONFIG_DN = NULL;
+
+  cf = &cfg;
+  config_init(cf);
+
+  if (!config_read_file(cf, "/etc/mysql/conf.d/mysql-auth_ldap.cfg")) {
+      error("%s:%d - %s\n",
+              config_error_file(cf),
+              config_error_line(cf),
+              config_error_text(cf));
+      config_destroy(cf);
+      return(EXIT_FAILURE);
+  }
+
+  if (config_lookup_string(cf, "ldap.uri", &_CONFIG_LDAP_URI))
+  {
+      CONFIG_LDAP_URI = strdup(_CONFIG_LDAP_URI);
+      info("ldap.uri = %s", CONFIG_LDAP_URI);
+  }
+  else
+      error("ldap.uri is not defined (e.g. ldap://localhost:389)");
+
+  if (config_lookup_string(cf, "ldap.dn", &_CONFIG_DN))
+  {
+      CONFIG_DN = strdup(_CONFIG_DN);
+      info("ldap.dn = %s", CONFIG_DN);
+  }
+  else
+      error("ldap.dn is not defined (e.g. ou=People,dc=example,dc=com)");
+
+  if (config_lookup_string(cf, "ldap.libldap", &CONFIG_LIBLDAP))
+  {
+      info("ldap.libldap = %s", CONFIG_LIBLDAP);
+  }
+  else
+      error("ldap.libldap is not defined (e.g. /usr/lib64/libldap.so)");
+  // end of reading the config file
+
   info("init: openning openLDAP library");
-	void *handle      = dlopen( LIBLDAP, RTLD_LAZY );
+	void *handle      = dlopen( CONFIG_LIBLDAP, RTLD_LAZY );
   if( handle == NULL ){
-    error("init: cannot open library: %s", LIBLDAP);
+    error("init: cannot open library: %s", CONFIG_LIBLDAP);
     return 1;
   }
 	void *initialize  = dlsym( handle, "ldap_initialize" );
@@ -412,6 +468,9 @@ static int deinit(void* omited){
     info("deinit: closing syslog. Buy!");
     closelog();
   }
+  free(CONFIG_LDAP_URI);
+  free(CONFIG_DN);
+  config_destroy(cf);
 	return 0;
 }
 
